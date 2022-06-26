@@ -1,0 +1,274 @@
+---
+title: "GENFI_DataExploration"
+author: "Shanny Foo"
+date: "28/06/2022"
+output: word_document
+---
+
+#### HOUSECLEANING IN R ####
+# To comment/uncomment out whole chunk: SHIFT+CTRL+C
+# To Restart R: SHIFT+CTRL+F10
+```{r Clearing R Workspace, message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+# Clear plots
+if(!is.null(dev.list())) dev.off()  # In GUI: clear all plots in the plots panel.
+
+# Clear console
+cat("\014")  # In GUI: Ctrl+L or to click on the clear console within the Edit menu.
+
+# Clean workspace
+rm(list=ls())  # In GUI: clear objects from the workspace in the environment panel.
+```
+
+
+
+--- STEP 1: SETUP
+
+#### LIBRARIES ####
+```{r warning=TRUE, include=FALSE}
+#library(openxlsx)
+library(readxl)
+
+library(tidyverse)
+library(ggpubr)
+library(ggplot2)
+```
+
+
+#### SOURCE DATAFRAME: VARIABLE RE-NAMING AND ASSIGNMENT ####
+```{r All Data, message=FALSE, warning=TRUE, include=FALSE, paged.print=FALSE}
+## GENFI Data: Longitudinal by Rows: https://readxl.tidyverse.org/reference/read_excel.html
+GENFI <- read_excel("E:\\Desktop\\FTD_Project\\GENFI\\GENFI_Data\\GENFI_Data_Analysis\\Dataframes\\GENFI_1_2_Longitudinal_03_19mar2022.xlsx", sheet = "Longitudinal_Rows")
+
+
+## Mutate variables of interest
+GENFI <- GENFI %>%
+  mutate(Ant_Insula_Avg = (Ant_Insula_LEFT+Ant_Insula_RIGHT/2))
+
+
+## Rename variables
+GENFI <- GENFI %>%
+  rename(#"Time" = Visit,
+         "Subject" = Blinded_Code,
+         "Days" = Date_of_assessment,
+         "Age" = Age_at_visit,
+         "ClinicalGroup" = Group_MC,
+         "ClinicalStatus" = Group_MC_Coded,
+         "GeneticMutation" = Genetic_Group_NMC,
+         "GeneticGroup" = Genetic_Group_NMC_Coded,
+         "MiniSEA" = MiniSEA_total,
+         "RSMS" = RSMS_total,
+         "Ekman" = Ekman_all,
+         "IRI" = mIRI_total,
+         "FauxPas" = Faux_pas_totalALL,
+         "aINS" = Ant_Insula_Avg,
+         "Site" = Blinded_Site_Coded,
+         "ScannerMRI" = Scanner_Coded) %>%
+    mutate_if(is.numeric,
+            round,
+            digits = 2)  # Round to 2 digits
+```
+
+
+
+--- STEP 2: DATA CLEANING AND PREPROCESSING
+
+#### DF: VARIABLES OF INTEREST ####
+```{r Labelling variables, echo=FALSE, message=FALSE, warning=TRUE, paged.print=FALSE}
+## Timepoint 1
+GENFI_Time_1 <- GENFI %>%
+  #group_by(Subject) %>%
+  select(Cohort, Days, Timepoint, Visit, Subject, Age, Gender, Education, ClinicalGroup, ClinicalStatus, GeneticMutation, GeneticGroup, MiniSEA, aINS, Site, ScannerMRI, Total_Brain, TIV_mm3) %>%
+  filter(ClinicalGroup %in% c("NMC", "PMC", "SMC")) %>%
+  filter(GeneticMutation %in% c("NMC", "C9", "GRN", "MAPT")) %>%
+  filter(Timepoint == "1") 
+```
+
+
+#### IMPUTE TIV ####
+```{r}
+## Head size is unlikely to change within subject over time, so this value is imputed using median values across timepoints, regardless of NA
+
+# Impute TIV_med
+GENFI_Time_1 <- GENFI_Time_1 %>%
+  #group_by(Subject) %>%
+  mutate(TIV_med = median(TIV_mm3, na.rm = TRUE)) # Reduces number of missing subjects
+  #ungroup()
+
+# Remove TIV_mm3 and other unnecessary variables
+GENFI_Time_1 <- GENFI_Time_1 %>% 
+  select(-c(TIV_mm3, Cohort))
+```
+
+
+
+--- STEP 3: INSPECT AND EXPLORE THE DATA
+
+#### INSPECTION OF COL FREQUENCY DISTRIBUTION ####
+```{r Plot col freq dist, echo=FALSE, message=FALSE, warning=TRUE, paged.print=FALSE}
+### GET A SENSE OF COL DISTRIBUTION
+
+## Look at the summary statistics of the variables
+summary(GENFI_Time_1)
+
+
+### VISUAL INSPECTION OF COL FREQUENCY DISTRIBUTION
+
+## Single plot of data distribution facted by variable
+long <- reshape2::melt(GENFI_Time_1)
+
+ggplot(long, aes(value)) +
+      facet_wrap(~variable, scales = 'free_x') +
+      geom_histogram(binwidth = function(x) 2 * IQR(x) / (length(x)^(1/3)))
+```
+
+
+#### BOX PLOT: CATEGORICAL VARIABLE RANGES ####
+```{r Plot categorial vars, echo=FALSE, message=FALSE, warning=TRUE, paged.print=FALSE}
+## Check the range and distribution of the DV by categorical variables
+
+par(mar=c(1,1,1,1))  # set plot margins
+
+# ClinicalStatus and aINS
+boxplot(aINS ~ ClinicalStatus, data = GENFI_Time_1)
+
+# ClinicalStatus and MiniSEA
+boxplot(MiniSEA ~ ClinicalStatus, data = GENFI_Time_1)
+
+# ClinicalStatus and RSMS
+boxplot(RSMS ~ ClinicalStatus, data = GENFI_Time_1)
+
+
+# ClinicalStatus and GeneticMutation
+boxplot(GeneticMutation ~ ClinicalStatus, data = GENFI_Time_1)
+
+
+# ClinicalStatus and Age
+boxplot(Age ~ ClinicalStatus, data = GENFI_Time_1)
+
+# ClinicalStatus and Gender
+boxplot(Gender ~ ClinicalStatus, data = GENFI_Time_1)
+
+# ClinicalStatus and Education
+boxplot(Education ~ ClinicalStatus, data = GENFI_Time_1)
+
+# ClinicalStatus and TIV_mm3
+boxplot(TIV_mm3 ~ ClinicalStatus, data = GENFI_Time_1)
+
+# ClinicalStatus and Total_Brain
+boxplot(Total_Brain ~ ClinicalStatus, data = GENFI_Time_1)
+
+# ClinicalStatus and ScannerMRI
+boxplot(ScannerMRI ~ ClinicalStatus, data = GENFI_Time_1)
+
+# ClinicalStatus and Site
+boxplot(Site ~ ClinicalStatus, data = GENFI_Time_1)
+
+# ClinicalStatus and aINS (annualised change in GM volume)
+boxplot(aINS ~ ClinicalStatus, data = GENFI_Time_1, cex=0.3)
+```
+
+
+#### SPAGHETTI PLOT: OVERALL DISTRIBUTION ####
+```{r Plot overall dist, echo=FALSE, message=FALSE, warning=TRUE, paged.print=FALSE}
+## Plot overall distribution of aINS over MiniSEA
+
+# Label for plot title
+lab.MiniSEA = c("11","12","13","14","15") # Label for MiniSEA to be added to ggplot
+
+# Plot parameters
+ggplot(data=GENFI_Time_1,
+             aes(x=MiniSEA,y=aINS,group=Subject)) +
+               geom_line () + geom_point () + ggtitle("aINS Spaghetti Plot") +
+               theme_bw() +
+               scale_x_continuous (breaks = c(11,12,13,14,15), labels=lab.MiniSEA, name = "MiniSEA") +
+               scale_y_continuous (breaks = seq(-180,420,50), name= "aINS") +
+               stat_summary(fun=mean,geom="point",size=2.5,shape=18,colour="orange") +
+               stat_summary(fun=mean,geom="line",lwd=0.4,colour="blue") +
+               stat_smooth(method="lm",se=FALSE,lwd=0.2,formula=y~x,colour="red") +
+               stat_smooth(method="lm",se=FALSE,lwd=0.2,formula=y~poly(x,2),colour="green")
+```
+
+
+#### SPAGHETTI PLOT: CONDITIONING ON MiniSEA-INVARIANT COVARIATES ####
+```{r Plot by group, echo=FALSE, message=FALSE, warning=TRUE, paged.print=FALSE}
+## Spaghetti plot with lowess smoother by ClinicalStatus to get a sense of the mean function by ClinicalStatus
+
+# Set panels (row#, col#), starting position (1,1,1,1 from margin), adjusted r, and font subtitle
+par(mfrow=c(3,1),oma=c(1,1,1,1),adj=0.5,font.sub=3) # note: for error that panels were out of bounds, decreased start position to c(0,0,0,0)
+
+# Plot parameters for each group
+tmp1 = cbind(GENFI_Time_1$MiniSEA[GENFI_Time_1$ClinicalStatus=="0"],GENFI_Time_1$aINS[GENFI_Time_1$ClinicalStatus=="0"])
+
+tmp2 = cbind(GENFI_Time_1$MiniSEA[GENFI_Time_1$ClinicalStatus=="1"],GENFI_Time_1$aINS[GENFI_Time_1$ClinicalStatus=="1"])
+
+tmp3 = cbind(GENFI_Time_1$MiniSEA[GENFI_Time_1$ClinicalStatus=="2"],GENFI_Time_1$aINS[GENFI_Time_1$ClinicalStatus=="2"])
+
+# Plot panels for each group, side by side
+scatter.smooth(tmp1[,1],tmp1[,2],pch=42,cex=0.75,xlab="MiniSEA",
+               ylab="aINS")
+title("ClinicalGroup = NMC")
+
+scatter.smooth(tmp2[,1],tmp2[,2],pch=42,cex=0.75,xlab="MiniSEA",
+               ylab="aINS")
+title("ClinicalGroup = PMC")
+
+scatter.smooth(tmp3[,1],tmp3[,2],pch=42,cex=0.75,xlab="MiniSEA",
+               ylab="aINS")
+title("ClinicalGroup = SMC")
+```
+
+
+#### SCATTER PLOT: VARIABLE RELATIONSHIPS ####
+```{r Plot x y relationship, echo=FALSE, message=FALSE, warning=TRUE, paged.print=FALSE}
+## Plot the relationship between MiniSEA and aINS for ClinicalStatus groups, without taking into consideration the multilevel structure of the data
+ggplot(data  = GENFI_Time_1,
+       aes(x = MiniSEA,
+           y = aINS))+
+  geom_point(size = 1.2,
+             alpha = .8,
+             position = "jitter")+# to add some random noise for plotting purposes
+  facet_wrap(~ClinicalStatus, nrow=4, ncol=1) +
+  theme_minimal()+
+  labs(title = "aINS vs. MiniSEA")
+
+
+## Now, add a regression line to the plot
+ggplot(data  = GENFI_Time_1,
+       aes(x = MiniSEA,
+           y = aINS))+
+  geom_point(size     = 1.2,
+             alpha    = .8,
+             position = "jitter")+ #to add some random noise for plotting purposes
+  geom_smooth(method = lm,
+              se     = FALSE,
+              col    = "black",
+              size   = .5,
+              alpha  = .8)+ # to add regression line
+  facet_wrap(~ClinicalStatus, nrow=4, ncol=1) +
+  theme_minimal()+
+  labs(title    = "aINS vs. MiniSEA",
+       subtitle = "add regression line")
+
+
+## Now, draw different regression lines for the different ClinicalStatus groups in the same plot, faceted by GeneticMutation
+ggplot(data      = GENFI_Time_1,
+       aes(x     = MiniSEA,
+           y     = aINS,
+           col   = ClinicalStatus,
+           group = ClinicalStatus))+ #to add the colours for different ClinicalStatus groups
+  geom_point(size     = 1.2,
+             alpha    = .8,
+             position = "jitter")+ #to add some random noise for plotting purposes
+  facet_wrap(~GeneticMutation, nrow=4, ncol=1) +
+  theme_minimal()+
+  theme(legend.position = "top")+
+  #theme(legend.position = "none")+
+  scale_fill_steps2()+
+  #scale_color_gradientn(colours = rainbow(100))+
+  geom_smooth(method = lm,
+              se     = FALSE,
+              size   = .5,
+              alpha  = .8)+ # to add regression line
+  labs(title    = "aINS vs. MiniSEA",
+       subtitle = "add colours for different ClinicalStatus groups and regression lines")
+```

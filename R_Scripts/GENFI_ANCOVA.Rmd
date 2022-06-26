@@ -1,0 +1,1357 @@
+---
+title: "GENFI_ANCOVA"
+author: "Shanny Foo"
+date: "27/06/2022"
+output: word_document
+---
+
+#### HOUSECLEANING IN R ####
+# To comment/uncomment out whole chunk: SHIFT+CTRL+C
+# To Restart R: SHIFT+CTRL+F10
+```{r Clearing R Workspace, message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+# Clear plots
+if(!is.null(dev.list())) dev.off()  # In GUI: clear all plots in the plots panel.
+
+# Clear console
+cat("\014")  # In GUI: Ctrl+L or to click on the clear console within the Edit menu.
+
+# Clean workspace
+rm(list=ls())  # In GUI: clear objects from the workspace in the environment panel.
+
+```
+
+
+
+--- SETUP
+
+#### LIBRARIES ####
+```{r warning=TRUE, include=FALSE}
+#library(openxlsx)
+library(readxl)
+
+library(tidyverse)
+library(ggpubr)
+library(ggplot2)
+library(pBrackets)
+library(grid)
+library(rstatix)
+library(ggprism)
+library(patchwork)
+library(magrittr)
+library(emmeans)
+#library(ggsignif)
+library(zoo)
+
+```
+
+
+#### SOURCE DATAFRAME: VARIABLE RE-NAMING AND ASSIGNMENT ####
+```{r All Data, message=FALSE, warning=TRUE, include=FALSE, paged.print=FALSE}
+## GENFI Data: Longitudinal by Rows: https://readxl.tidyverse.org/reference/read_excel.html
+GENFI <- read_excel("E:\\Desktop\\FTD_Project\\GENFI\\GENFI_Data\\GENFI_Data_Analysis\\Dataframes\\GENFI_1_2_Longitudinal_03_19mar2022.xlsx", sheet = "Longitudinal_Rows")
+
+
+## Mutate variables of interest
+GENFI <- GENFI %>%
+  mutate(Ant_Insula_Avg = (Ant_Insula_LEFT+Ant_Insula_RIGHT/2))
+
+
+## Rename variables
+GENFI <- GENFI %>%
+  rename(#"Time" = Visit,
+         "Subject" = Blinded_Code,
+         "Days" = Date_of_assessment,
+         "Age" = Age_at_visit,
+         "ClinicalGroup" = Group_MC,
+         "ClinicalStatus" = Group_MC_Coded,
+         "GeneticMutation" = Genetic_Group_NMC,
+         "GeneticGroup" = Genetic_Group_NMC_Coded,
+         "MiniSEA" = MiniSEA_total,
+         "RSMS" = RSMS_total,
+         "Ekman" = Ekman_all,
+         "IRI" = mIRI_total,
+         "FauxPas" = Faux_pas_totalALL,
+         "aINS" = Ant_Insula_Avg,
+         "Site" = Blinded_Site_Coded,
+         "ScannerMRI" = Scanner_Coded) %>%
+    mutate_if(is.numeric,
+            round,
+            digits = 2)  # Round to 2 digits
+
+```
+
+
+
+--- DATA CLEANING AND PREPROCESSING
+
+#### DF: VARIABLES OF INTEREST ####
+```{r Labelling variables, echo=FALSE, message=FALSE, warning=TRUE, paged.print=FALSE}
+## Timepoint 1
+GENFI_Time_1 <- GENFI %>%
+  #group_by(Subject) %>%
+  select(Cohort, Days, Timepoint, Visit, Subject, Age, Gender, Education, ClinicalGroup, ClinicalStatus, GeneticMutation, GeneticGroup, MiniSEA, aINS, Site, ScannerMRI, Total_Brain, TIV_mm3) %>%
+  filter(ClinicalGroup %in% c("NMC", "PMC", "SMC")) %>%
+  filter(GeneticMutation %in% c("NMC", "C9", "GRN", "MAPT")) %>%
+  filter(Timepoint == "1") 
+
+```
+
+
+#### IMPUTE TIV ####
+```{r}
+## Head size is unlikely to change within subject over time, so this value is imputed using median values across timepoints, regardless of NA
+
+# Impute TIV_med
+GENFI_Time_1 <- GENFI_Time_1 %>%
+  #group_by(Subject) %>%
+  mutate(TIV_med = median(TIV_mm3, na.rm = TRUE)) # Reduces number of missing subjects
+  #ungroup()
+
+# Remove TIV_mm3 and other unnecessary variables
+GENFI_Time_1 <- GENFI_Time_1 %>% 
+  select(-c(TIV_mm3, Cohort))
+
+```
+
+
+#### IMPUTE OR DROP NA ####
+May be optional, ANCOVAs handle NA pretty well. 
+```{r}
+# ## Option 1: Check NA, Impute variables with <10% NA, Drop rows for variables with >10% NA
+# 
+# 
+# ## NMC: Check NA 
+# GENFI_Time_1_NMC <- GENFI_Time_1 %>%
+#   filter(ClinicalGroup == "NMC")
+# summary(GENFI_Time_1_NMC)
+# 
+# # NMC: Impute NA 
+# GENFI_Time_1_NMC$Total_Brain <- na.aggregate(GENFI_Time_1_NMC$Total_Brain, FUN=median)
+# GENFI_Time_1_NMC$TIV_med <- na.aggregate(GENFI_Time_1_NMC$TIV_med, FUN=median)
+# GENFI_Time_1_NMC$aINS <- na.aggregate(GENFI_Time_1_NMC$aINS, FUN=median)
+# #GENFI_Time_1_NMC$MiniSEA <- na.aggregate(GENFI_Time_1_NMC$MiniSEA, FUN=median)
+# 
+# # NMC: Drop NA
+# GENFI_Time_1_NMC <- GENFI_Time_1_NMC %>% drop_na(MiniSEA)
+# 
+# 
+# ## PMC: Check NA 
+# GENFI_Time_1_PMC <- GENFI_Time_1 %>%
+#   filter(ClinicalGroup == "PMC")
+# summary(GENFI_Time_1_PMC)
+# 
+# # PMC: Impute NA 
+# GENFI_Time_1_PMC$Total_Brain <- na.aggregate(GENFI_Time_1_PMC$Total_Brain, FUN=median)
+# GENFI_Time_1_PMC$TIV_med <- na.aggregate(GENFI_Time_1_PMC$TIV_med, FUN=median)
+# GENFI_Time_1_PMC$aINS <- na.aggregate(GENFI_Time_1_PMC$aINS, FUN=median)
+# #GENFI_Time_1_PMC$MiniSEA <- na.aggregate(GENFI_Time_1_PMC$MiniSEA, FUN=median)
+# 
+# # PMC: Drop NA
+# GENFI_Time_1_PMC <- GENFI_Time_1_PMC %>% drop_na(MiniSEA)
+# 
+# 
+# ## SMC: Check NA 
+# GENFI_Time_1_SMC <- GENFI_Time_1 %>%
+#   filter(ClinicalGroup == "SMC")
+# summary(GENFI_Time_1_SMC)
+# 
+# # SMC: Impute NA 
+# #GENFI_Time_1_SMC$Total_Brain <- na.aggregate(GENFI_Time_1_SMC$Total_Brain, FUN=median)
+# GENFI_Time_1_SMC$TIV_med <- na.aggregate(GENFI_Time_1_SMC$TIV_med, FUN=median)
+# #GENFI_Time_1_SMC$aINS <- na.aggregate(GENFI_Time_1_SMC$aINS, FUN=median)
+# #GENFI_Time_1_SMC$MiniSEA <- na.aggregate(GENFI_Time_1_SMC$MiniSEA, FUN=median)
+# 
+# # SMC: Drop NA
+# GENFI_Time_1_SMC <- GENFI_Time_1_SMC %>% drop_na(MiniSEA, aINS, Total_Brain)
+# 
+# 
+# ## Merge back into omnibus df
+# GENFI_Time_1 <- rbind(GENFI_Time_1_NMC, GENFI_Time_1_PMC, GENFI_Time_1_SMC) %>%
+#   group_by(Subject)
+
+```
+
+
+
+#### SET FACTORS ####
+```{r Set factor variables, echo=FALSE, message=FALSE, warning=TRUE, paged.print=FALSE}
+## Subject is set as the factor since each has multiple rows (1 per timepoint)
+GENFI_Time_1["Subject"]<-lapply(GENFI_Time_1["Subject"],factor)
+
+
+## Convert random effects to factors
+GENFI_Time_1["ClinicalGroup"]<-lapply(GENFI_Time_1["ClinicalGroup"],factor)
+GENFI_Time_1["GeneticMutation"]<-lapply(GENFI_Time_1["GeneticMutation"],factor)
+GENFI_Time_1["Gender"]<-lapply(GENFI_Time_1["Gender"],factor)
+GENFI_Time_1["Site"]<-lapply(GENFI_Time_1["Site"],factor)
+GENFI_Time_1["ScannerMRI"]<-lapply(GENFI_Time_1["ScannerMRI"],factor)
+#GENFI_Time_1["Time"]<-lapply(GENFI_Time_1["Time"],factor) # Is not a factor in longitudinal where subject is the factor
+
+# Check factor levels
+levels(GENFI_Time_1$Subject)
+levels(GENFI_Time_1$ClinicalGroup)
+levels(GENFI_Time_1$GeneticMutation)
+levels(GENFI_Time_1$Gender)
+levels(GENFI_Time_1$Site)
+levels(GENFI_Time_1$ScannerMRI)
+#levels(GENFI_Time_1$Time) # No, because we are measuring change over time
+
+# Check first 10 lines
+head(GENFI_Time_1, n=10)
+
+# Note: Covariates of no interest
+  # Age
+  # Gender
+  # Education
+  # TIV_med
+  # Total_Brain
+  # Site
+  # Scanner
+
+```
+
+
+
+--- ANCOVA ANALYSIS (aINS)
+
+#### ANCOVA STEP 1: CHECK FOR INTERACTION(S)
+```{r}
+# Check for interaction: Include all grouping variables
+
+res.aov <- GENFI_Time_1 %>%
+  ungroup() %>%  # Do this just in case it was auto-grouped by subject
+  anova_test(aINS ~ TIV_med + Total_Brain + Site + ScannerMRI + Age + Education + Gender + ClinicalGroup*GeneticMutation)
+get_anova_table(res.aov)
+# Check: Interaction between ClinicalGroup and GeneticMutation
+
+```
+
+
+#### ANCOVA STEP 2A: IF THERE IS INTERACTION, RUN TWO-WAY ANCOVA
+```{r}
+#### Step 2: Compute (Two-Way) ANCOVA ####
+res.aov <- GENFI_Time_1 %>%
+  ungroup() %>%
+  anova_test(aINS ~ TIV_med + Total_Brain + Site + ScannerMRI + Age + Education + Gender + ClinicalGroup*GeneticMutation)
+
+get_anova_table(res.aov)
+
+
+### Simple main effect analyses for ClinicalGroup at each level of GeneticMutation ###
+# group data by GeneticMutation and perform one-way ANCOVA for ClinicalGroup controlling for covariates
+GENFI_Time_1 %>%
+  #group_by(GeneticMutation) %>%
+  anova_test(aINS ~ TIV_med + Total_Brain + Site + ScannerMRI + Age + Education + ClinicalGroup) 
+
+# Pairwise comparisons between ClinicalGroup groups at each level of GeneticMutation with Bonferroni correction applied
+pwc <- GENFI_Time_1 %>%
+  group_by(GeneticMutation) %>%
+  emmeans_test(
+    aINS ~ ClinicalGroup, covariate = c(Age, Education),
+    p.adjust.method = "bonferroni") # Note that contrasts must have more than 2 levels (otherwise run a T-Test or ANOVA for variables with 2 or less variables) so Gender cannot be included
+pwc %>% filter(GeneticMutation %in% c("NMC", "C9", "GRN", "MAPT")) # Include ONLY subgroups of GeneticMutation found to be significant
+
+get_emmeans(pwc)
+
+
+### Simple main effect of GeneticMutation at each level of ClinicalGroup (same as above)
+GENFI_Time_1 %>%
+  #group_by(ClinicalGroup) %>%
+  anova_test(aINS ~ TIV_med + Total_Brain + Site + ScannerMRI + Age + Education + Gender + GeneticMutation) %>%
+  ungroup()
+
+# Pairwise comparisons between GeneticMutation at each level of ClinicalGroup
+pwc2 <- GENFI_Time_1 %>%
+  group_by(ClinicalGroup) %>%
+  emmeans_test(
+    aINS ~ GeneticMutation, covariate = c(Age, Education),
+    p.adjust.method = "bonferroni"
+  ) %>%
+  select(-df, -statistic, -p) #Remove details
+pwc2 %>% filter(ClinicalGroup %in% c("NMC", "PMC", "SMC")) # Include ONLY subgroups of ClinicalGroup found to be significant
+
+get_emmeans(pwc2)
+
+```
+
+
+#### ANCOVA STEP 2B: IF NO INTERACTION, COMPUTE ONE-WAY ANCOVA 
+```{r}
+#### Step 2: Compute (One-Way) ANCOVA ####
+
+# ANCOVA - including only grouping variable with main effect
+res.aov <- GENFI_Time_1 %>% anova_test(aINS ~ TIV_med + Total_Brain + Site + ScannerMRI + Age + Education + Gender + ClinicalGroup)
+get_anova_table(res.aov)
+
+### Pairwise comparisons ###
+pwc <- GENFI_Time_1 %>%
+  ungroup() %>%
+  emmeans_test(
+    aINS ~ ClinicalGroup, covariate = c(Age, Education),
+    p.adjust.method = "bonferroni"
+  ) # Note that contrasts must have more than 2 levels (otherwise run a T-Test or ANOVA for variables with 2 or less variables) so Gender cannot be included
+pwc
+get_emmeans(pwc) # Display the adjusted means of each group (i.e., estimated marginal means)
+
+```
+
+
+#### ANCOVA STEP 3A: IF THERE IS INTERACTION, CHECK TWO-WAY ANCOVA ASSUMPTIONS
+```{r}
+#### TWO-WAY ANCOVA: GENFI_Time_1 ####
+### ClinicalGroup: aINS ###
+
+#### Step 1: ANCOVA Assumptions ####
+
+### Linearity: for each covariate
+ggscatter(
+  GENFI_T1, x = "Age", y = "aINS",
+  facet.by  = c("GeneticMutation", "ClinicalGroup"),
+  short.panel.labs = FALSE
+)+
+  stat_smooth(method = "loess", span = 0.9)
+
+ggscatter(
+  GENFI_T1, x = "Education", y = "aINS",
+  facet.by  = c("GeneticMutation", "ClinicalGroup"),
+  short.panel.labs = FALSE
+)+
+  stat_smooth(method = "loess", span = 0.9)
+
+ggscatter(
+  GENFI_T1, x = "Gender", y = "aINS",
+  facet.by  = c("GeneticMutation", "ClinicalGroup"),
+  short.panel.labs = FALSE
+)+
+  stat_smooth(method = "loess", span = 0.9)
+
+### Homogeneity of regression slopes: for each covariate
+GENFI_T1 %>% anova_test(
+  aINS ~ Age + ClinicalGroup + GeneticMutation + ClinicalGroup*GeneticMutation + Age* ClinicalGroup + Age*GeneticMutation + Age*GeneticMutation*ClinicalGroup)
+
+GENFI_T1 %>% anova_test(
+  aINS ~ Education + ClinicalGroup + GeneticMutation + ClinicalGroup*GeneticMutation + Education* ClinicalGroup + Education*GeneticMutation + Education*GeneticMutation*ClinicalGroup)
+
+GENFI_T1 %>% anova_test(
+  aINS ~ Gender + ClinicalGroup + GeneticMutation + ClinicalGroup*GeneticMutation + Gender* ClinicalGroup + Gender*GeneticMutation + Gender*GeneticMutation*ClinicalGroup)
+
+# Alternate way to do homogeneity of regression slopes
+GENFI_T1 %>%
+  unite(col = "group", ClinicalGroup, GeneticMutation) %>%
+  anova_test(aINS ~ group*Age)
+
+GENFI_T1 %>%
+  unite(col = "group", ClinicalGroup, GeneticMutation) %>%
+  anova_test(aINS ~ group*Education)
+
+GENFI_T1 %>%
+  unite(col = "group", ClinicalGroup, GeneticMutation) %>%
+  anova_test(aINS ~ group*Gender)
+
+### Normality of residuals: Shapiro-Wilks Test
+model <- lm(aINS ~ TIV_med + Total_Brain + Site + ScannerMRI + Age + Education + Gender + ClinicalGroup*GeneticMutation, data = GENFI_T1)
+
+model.metrics <- augment(model) %>%
+  select(-.hat, -.sigma, -.fitted)
+
+head(model.metrics, 3)
+
+shapiro_test(model.metrics$.resid)
+
+### Homoscedasticity: Levene's Test
+levene_test(.resid ~ ClinicalGroup*GeneticMutation, data = model.metrics)
+
+### Outliers, p>|3|
+model.metrics %>%
+  filter(abs(.std.resid) > 3) %>%
+  as.data.frame()
+
+```
+
+
+#### ANCOVA STEP 3B: IF ONLY MAIN EFFECT(S), CHECK ONE-WAY ANCOVA ASSUMPTIONS
+```{r}
+#### ONE-WAY ANCOVA: GENFI_Time_1 ####
+### ClinicalGroup: aINS ###
+
+### Step 1: ANCOVA Assumptions ###
+
+### Linearity: for each covariate
+ggscatter(
+  GENFI_Time_1, x = "Age", y = "aINS",
+  color = "ClinicalGroup", add = "reg.line"
+)+
+  stat_regline_equation(
+    aes(label =  paste(..eq.label.., ..rr.label.., sep = "~~~~"), color = ClinicalGroup)
+  )
+
+ggscatter(
+  GENFI_Time_1, x = "Education", y = "aINS",
+  color = "ClinicalGroup", add = "reg.line"
+)+
+  stat_regline_equation(
+    aes(label =  paste(..eq.label.., ..rr.label.., sep = "~~~~"), color = ClinicalGroup)
+  )
+
+ggscatter(
+  GENFI_Time_1, x = "Gender", y = "aINS",
+  color = "ClinicalGroup", add = "reg.line"
+)+
+  stat_regline_equation(
+    aes(label =  paste(..eq.label.., ..rr.label.., sep = "~~~~"), color = ClinicalGroup)
+  )
+
+### Homogeneity of regression slopes: for each covariate
+GENFI_Time_1 %>% anova_test(aINS ~ ClinicalGroup*Age)
+
+GENFI_Time_1 %>% anova_test(aINS ~ ClinicalGroup*Education)
+
+GENFI_Time_1 %>% anova_test(aINS ~ ClinicalGroup*Gender)
+
+### Normality of residuals: Shapiro-Wilks Test
+model <- lm(aINS ~ TIV_med + Total_Brain + Site + ScannerMRI + Age + Education + Gender + ClinicalGroup, data = GENFI_Time_1)
+
+model.metrics <- augment(model) %>%
+  select(-.hat, -.sigma, -.fitted)
+
+head(model.metrics, 3)
+
+shapiro_test(model.metrics$.resid)
+
+### Homoscedasticity: Levene's Test
+model.metrics %>% levene_test(.resid ~ ClinicalGroup)
+
+### Outliers, p>|3|
+model.metrics %>%
+  filter(abs(.std.resid) > 3) %>%
+  as.data.frame()
+
+```
+
+
+
+--- ANCOVA BAR CHARTS (aINS)
+
+#### BAR CHART: INTERACTION ###
+```{r}
+#### BAR PLOT: INTERACTION ####
+
+## Statistical Tests
+stat.test <- GENFI_Time_1 %>%
+  ungroup() %>%
+  emmeans_test(aINS ~ ClinicalGroup,
+               #covariate = c(Gender),
+               #ref.group = "NMC",
+               #comparisons = list(c("NMC", "PMC", "SMC"), c("NMC", "C9", "GRN", "MAPT")),
+               p.adjust.method = "bonferroni",
+               conf.level = 0.95,
+               #model = NULL,
+               #detailed = FALSE
+               )
+stat.test
+
+
+### Bar plots ###
+bp1 <- ggbarplot(
+  GENFI_Time_1, x = "ClinicalGroup", y = "aINS", fill = "GeneticMutation",
+  legend = "top", #none to remove; also: top, bottom, left, right
+  #main = "AIC GM Volume by Group",
+  xlab = "Clinical Group",
+  ylab = "aINS ",
+  palette = "aaas", add = "mean_sd",
+  position = position_dodge(0.8)
+  )
+bp1
+
+
+## Add p-values onto the bar plots
+bp1 +
+  geom_bracket(
+    xmin = c(1, 2), xmax = c(3, 3),
+    y.position = c(7000, 6500), label = c("****", "****"),
+    tip.length = 0.02,
+    color = c("black"),
+    size = 0.7
+    ) +
+  geom_bracket(
+    xmin = c(3, 2.8), xmax = c(3.3, 3.3),
+    y.position = c(5200, 5700), label = c("****", "****"),
+    tip.length = 0.02,
+    color = c("forest green"),
+    size = 0.7
+    ) +
+  labs(fill = "Clinical Group") +
+  font("title", size = 14, color = "black", face = "bold")+
+  font("subtitle", size = 10, color = "black")+
+  font("caption", size = 10, color = "black")+
+  font("xlab", size = 14, color = "black")+
+  font("ylab", size = 14, color = "black")+
+  font("xy.text", size = 14, color = "black", face = "bold")
+
+# Adjust brackets and change p-values to numbers or stars: https://www.datanovia.com/en/blog/how-to-add-p-values-onto-a-grouped-ggplot-using-the-ggpubr-r-package/
+
+```
+
+
+#### BAR CHART: MAIN EFFECTS ###
+```{r}
+#### BAR PLOT: MAIN EFFECTS ####
+
+## Statistical Tests
+
+stat.test <- GENFI_Time_1 %>%
+  ungroup() %>%
+  emmeans_test(aINS ~ ClinicalGroup,
+               #covariate = c(Gender),
+               #ref.group = "NMC",
+               #comparisons = list(c("NMC", "PMC", "SMC"), c("NMC", "C9", "GRN", "MAPT")),
+               p.adjust.method = "bonferroni",
+               conf.level = 0.95,
+               #model = NULL,
+               #detailed = FALSE
+               )
+stat.test
+
+
+## Bar plots ##
+
+bp2 <- ggbarplot(
+  GENFI_Time_1, x = "ClinicalGroup", y = "aINS", fill = "GeneticMutation",
+  title = "",
+  legend = "top",
+  ylab = "aINS",
+  xlab = "Clinical Group",
+  color = "GeneticMutation",
+  add = c("mean_sd", "point"), add.params = list(color = "black", alpha=0.08), palette = "aaas",
+                 position = position_dodge(.8)) + theme(axis.line = element_line(size = 0.9), axis.ticks = element_line(size = 0.9))
+  #add = c("mean_se", "point"), add.params = list(color = "black", alpha=0.08), palette = "aaas",                  position = position_dodge(.8)) + theme(axis.line = element_line(size = 0.9), axis.ticks = element_line(size = 0.9))
+bp2
+
+
+## Add p-values onto the bar plots
+stat.test <- stat.test %>%
+  add_xy_position(fun = "mean_sd", x = "ClinicalGroup", dodge = 0.8)
+bp2 + stat_pvalue_manual(
+  stat.test,  label = "p.adj.signif", aINS = 0.01, hide.ns = TRUE
+  ) +
+  labs(fill = "Clinical Group") +
+  font("title", size = 14, color = "black", face = "bold")+
+  font("subtitle", size = 10, color = "black")+
+  font("caption", size = 10, color = "black")+
+  font("xlab", size = 14, color = "black")+
+  font("ylab", size = 14, color = "black")+
+  font("xy.text", size = 14, color = "black", face = "bold")
+
+bp2 + stat_pvalue_manual(stat.test,  label = "p.adj.signif", tip.length = 0.02, bracket.nudge.y = +220, step.increase = 0.05, aINS = 0.0, hide.ns = TRUE)
+
+```
+
+
+
+--- ANCOVA ANALYSIS (MiniSEA)
+
+#### ANCOVA STEP 1: CHECK FOR INTERACTION(S) 
+```{r}
+# Check for interaction: Include all grouping variables
+
+res.aov <- GENFI_Time_1 %>%
+  ungroup() %>%  # Do this just in case it was auto-grouped by subject
+  anova_test(MiniSEA ~ TIV_med + Total_Brain + Site + ScannerMRI + Age + Education + Gender + ClinicalGroup*GeneticMutation)
+get_anova_table(res.aov)
+# No interaction between ClinicalGroup and GeneticMutation - continue with One-Way ANCOVA post-hoc tests for ClinicalGroup
+
+```
+
+
+#### ANCOVA STEP 2A: IF THERE IS INTERACTION, RUN TWO-WAY ANCOVA
+```{r}
+#### Step 2: Compute (Two-Way) ANCOVA ####
+res.aov <- GENFI_Time_1 %>%
+  anova_test(MiniSEA ~ TIV_med + Total_Brain + Site + ScannerMRI + Age + Education + Gender + ClinicalGroup*GeneticMutation)
+
+get_anova_table(res.aov)
+# Interaction between ClinicalGroup and GeneticMutation
+
+### Simple main effect analyses for ClinicalGroup at each level of GeneticMutation ###
+# group data by GeneticMutation and perform one-way ANCOVA for  ClinicalGroup controlling for covariates
+GENFI_Time_1 %>%
+  #group_by(GeneticMutation) %>%
+  anova_test(MiniSEA ~ TIV_med + Total_Brain + Site + ScannerMRI + Age + Education + Gender + ClinicalGroup)
+
+# Pairwise comparisons between ClinicalGroup groups at each level of GeneticMutation with Bonferroni correction applied
+pwc <- GENFI_Time_1 %>%
+  group_by(GeneticMutation) %>%
+  emmeans_test(
+    MiniSEA ~ ClinicalGroup, covariate = c(Age, Education),
+    p.adjust.method = "bonferroni"
+  ) # Note that contrasts must have more than 2 levels (otherwise run a T-Test or ANOVA for variables with 2 or less variables) so Gender cannot be included
+pwc %>% filter(GeneticMutation == "NMC" | GeneticMutation == "C9orf72" | GeneticMutation == "GRN" | GeneticMutation == "MAPT") # Include ONLY subgroups of GeneticMutation found to be significant
+print(pwc)
+
+### Simple main effect of GeneticMutation at each level of ClinicalGroup (same as above)
+GENFI_Time_1 %>%
+  #group_by(ClinicalGroup) %>%
+  anova_test(MiniSEA ~ TIV_med + Total_Brain + Site + ScannerMRI + Age + Education + Gender + GeneticMutation)
+
+# Pairwise comparisons between GeneticMutation at each level of ClinicalGroup
+pwc2 <- GENFI_Time_1 %>%
+  group_by(ClinicalGroup) %>%
+  emmeans_test(
+    MiniSEA ~ GeneticMutation, covariate = c(Age, Education),
+    p.adjust.method = "bonferroni"
+  ) %>%
+  select(-df, -statistic, -p) #Remove details
+pwc2 %>% filter(ClinicalGroup == "0_HC" | ClinicalGroup == "1_PMC" | ClinicalGroup == "2_SMC") # Include ONLY subgroups of ClinicalGroup found to be significant
+print(pwc2)
+
+```
+
+
+#### ANCOVA STEP 2B: IF NO INTERACTION, COMPUTE ONE-WAY ANCOVA 
+```{r}
+#### Step 2: Compute (One-Way) ANCOVA ####
+
+## ANCOVA 1- including only grouping variable with main effect. Do this for ClinicalGroup. No need for GeneticGroup since it is nested within ClinicalGroup (running it would only compare GeneticGroup without considering ClinicalGroup)
+res.aov <- GENFI_Time_1 %>%
+  ungroup() %>%
+  anova_test(MiniSEA ~ TIV_med + Total_Brain + Site + ScannerMRI + Age + Education + Gender + ClinicalGroup)
+get_anova_table(res.aov)
+
+### Pairwise comparisons ###
+pwc <- GENFI_Time_1 %>%
+  ungroup() %>%
+  emmeans_test(
+    MiniSEA ~ ClinicalGroup, covariate = c(Age, Education),
+    p.adjust.method = "bonferroni"
+  ) # Note that contrasts must have more than 2 levels (otherwise run a T-Test or ANOVA for variables with 2 or less variables) so Gender cannot be included
+pwc
+get_emmeans(pwc) # Display the adjusted means of each group (i.e., estimated marginal means)
+
+
+## ANCOVA 2 - including only grouping variable with main effect
+res.aov <- GENFI_Time_1 %>%
+  ungroup() %>%
+  anova_test(MiniSEA ~ TIV_med + Total_Brain + Site + ScannerMRI + Age + Education + Gender + GeneticMutation)
+get_anova_table(res.aov)
+
+### Pairwise comparisons ###
+pwc <- GENFI_Time_1 %>%
+  ungroup() %>%
+  emmeans_test(
+    MiniSEA ~ GeneticMutation, covariate = c(Age, Education),
+    p.adjust.method = "bonferroni"
+  ) # Note that contrasts must have more than 2 levels (otherwise run a T-Test or ANOVA for variables with 2 or less variables) so Gender cannot be included
+pwc
+get_emmeans(pwc) # Display the adjusted means of each group (i.e., estimated marginal means)
+
+```
+
+
+#### ANCOVA STEP 3A: IF THERE IS INTERACTION, CHECK TWO-WAY ANCOVA ASSUMPTIONS
+```{r}
+#### TWO-WAY ANCOVA: GENFI_Time_1 ####
+### ClinicalGroup: MiniSEA ###
+
+#### Step 1: ANCOVA Assumptions ####
+
+### Linearity: for each covariate
+ggscatter(
+  GENFI_T1, x = "Age", y = "MiniSEA",
+  facet.by  = c("GeneticMutation", "ClinicalGroup"),
+  short.panel.labs = FALSE
+)+
+  stat_smooth(method = "loess", span = 0.9)
+
+ggscatter(
+  GENFI_T1, x = "Education", y = "MiniSEA",
+  facet.by  = c("GeneticMutation", "ClinicalGroup"),
+  short.panel.labs = FALSE
+)+
+  stat_smooth(method = "loess", span = 0.9)
+
+ggscatter(
+  GENFI_T1, x = "Gender", y = "MiniSEA",
+  facet.by  = c("GeneticMutation", "ClinicalGroup"),
+  short.panel.labs = FALSE
+)+
+  stat_smooth(method = "loess", span = 0.9)
+
+### Homogeneity of regression slopes: for each covariate
+GENFI_T1 %>% anova_test(
+  MiniSEA ~ Age + ClinicalGroup + GeneticMutation + ClinicalGroup*GeneticMutation + Age* ClinicalGroup + Age*GeneticMutation + Age*GeneticMutation*ClinicalGroup)
+
+GENFI_T1 %>% anova_test(
+  MiniSEA ~ Education + ClinicalGroup + GeneticMutation + ClinicalGroup*GeneticMutation + Education* ClinicalGroup + Education*GeneticMutation + Education*GeneticMutation*ClinicalGroup)
+
+GENFI_T1 %>% anova_test(
+  MiniSEA ~ Gender + ClinicalGroup + GeneticMutation + ClinicalGroup*GeneticMutation + Gender* ClinicalGroup + Gender*GeneticMutation + Gender*GeneticMutation*ClinicalGroup)
+
+# Alternate way to do homogeneity of regression slopes
+GENFI_T1 %>%
+  unite(col = "group", ClinicalGroup, GeneticMutation) %>%
+  anova_test(MiniSEA ~ group*Age)
+
+GENFI_T1 %>%
+  unite(col = "group", ClinicalGroup, GeneticMutation) %>%
+  anova_test(MiniSEA ~ group*Education)
+
+GENFI_T1 %>%
+  unite(col = "group", ClinicalGroup, GeneticMutation) %>%
+  anova_test(MiniSEA ~ group*Gender)
+
+### Normality of residuals: Shapiro-Wilks Test
+model <- lm(MiniSEA ~ TIV_med + Total_Brain + Site + ScannerMRI + Age + Education + Gender + ClinicalGroup*GeneticMutation, data = GENFI_T1)
+
+model.metrics <- augment(model) %>%
+  select(-.hat, -.sigma, -.fitted)
+
+head(model.metrics, 3)
+
+shapiro_test(model.metrics$.resid)
+
+### Homoscedasticity: Levene's Test
+levene_test(.resid ~ ClinicalGroup*GeneticMutation, data = model.metrics)
+
+### Outliers, p>|3|
+model.metrics %>%
+  filter(abs(.std.resid) > 3) %>%
+  as.data.frame()
+
+```
+
+
+#### ANCOVA STEP 3B: IF ONLY MAIN EFFECT(S), CHECK ONE-WAY ANCOVA ASSUMPTIONS
+```{r}
+#### ONE-WAY ANCOVA: GENFI_Time_1 ####
+### ClinicalGroup: MiniSEA ###
+
+### Step 1: ANCOVA Assumptions ###
+
+### Linearity: for each covariate
+ggscatter(
+  GENFI_Time_1, x = "Age", y = "MiniSEA",
+  color = "ClinicalGroup", add = "reg.line"
+)+
+  stat_regline_equation(
+    aes(label =  paste(..eq.label.., ..rr.label.., sep = "~~~~"), color = ClinicalGroup)
+  )
+
+ggscatter(
+  GENFI_Time_1, x = "Education", y = "MiniSEA",
+  color = "ClinicalGroup", add = "reg.line"
+)+
+  stat_regline_equation(
+    aes(label =  paste(..eq.label.., ..rr.label.., sep = "~~~~"), color = ClinicalGroup)
+  )
+
+ggscatter(
+  GENFI_Time_1, x = "Gender", y = "MiniSEA",
+  color = "ClinicalGroup", add = "reg.line"
+)+
+  stat_regline_equation(
+    aes(label =  paste(..eq.label.., ..rr.label.., sep = "~~~~"), color = ClinicalGroup)
+  )
+
+### Homogeneity of regression slopes: for each covariate
+GENFI_Time_1 %>% anova_test(MiniSEA ~ ClinicalGroup*Age)
+
+GENFI_Time_1 %>% anova_test(MiniSEA ~ ClinicalGroup*Education)
+
+GENFI_Time_1 %>% anova_test(MiniSEA ~ ClinicalGroup*Gender)
+
+### Normality of residuals: Shapiro-Wilks Test
+model <- lm(MiniSEA ~ TIV_med + Total_Brain + Site + ScannerMRI + Age + Education + Gender + ClinicalGroup, data = GENFI_Time_1)
+
+model.metrics <- augment(model) %>%
+  select(-.hat, -.sigma, -.fitted)
+
+head(model.metrics, 3)
+
+shapiro_test(model.metrics$.resid)
+
+### Homoscedasticity: Levene's Test
+model.metrics %>% levene_test(.resid ~ ClinicalGroup)
+
+### Outliers, p>|3|
+model.metrics %>%
+  filter(abs(.std.resid) > 3) %>%
+  as.data.frame()
+
+```
+
+
+
+--- ANCOVA BAR CHARTS (MiniSEA)
+
+#### BAR CHART: INTERACTION ###
+```{r}
+#### BAR PLOT: INTERACTION ####
+
+## Statistical Tests
+stat.test <- GENFI_Time_1 %>%
+  ungroup() %>%
+  emmeans_test(MiniSEA ~ ClinicalGroup,
+               #covariate = c(Gender),
+               #ref.group = "NMC",
+               #comparisons = list(c("NMC", "PMC", "SMC"), c("NMC", "C9", "GRN", "MAPT")),
+               p.adjust.method = "bonferroni",
+               conf.level = 0.95,
+               #model = NULL,
+               #detailed = FALSE
+               )
+stat.test
+
+
+### Bar plots ###
+bp1 <- ggbarplot(
+  GENFI_Time_1, x = "ClinicalGroup", y = "MiniSEA", fill = "GeneticMutation",
+  legend = "top", #none to remove; also: top, bottom, left, right
+  #main = "AIC GM Volume by Group",
+  xlab = "Clinical Group",
+  ylab = "MiniSEA ",
+  palette = "aaas", add = "mean_sd",
+  position = position_dodge(0.8)
+  )
+bp1
+
+
+## Add p-values onto the bar plots
+bp1 +
+  geom_bracket(
+    xmin = c(1, 2), xmax = c(3, 3),
+    y.position = c(35, 33), label = c("****", "****"),
+    tip.length = 0.02,
+    color = c("black"),
+    size = 0.7
+    ) +
+  geom_bracket(
+    xmin = c(3, 2.8), xmax = c(3.3, 3.3),
+    y.position = c(26, 28), label = c("****", "****"),
+    tip.length = 0.02,
+    color = c("forest green"),
+    size = 0.7
+    ) +
+  labs(fill = "Clinical Group") +
+  font("title", size = 14, color = "black", face = "bold")+
+  font("subtitle", size = 10, color = "black")+
+  font("caption", size = 10, color = "black")+
+  font("xlab", size = 14, color = "black")+
+  font("ylab", size = 14, color = "black")+
+  font("xy.text", size = 14, color = "black", face = "bold")
+
+# Adjust brackets and change p-values to numbers or stars: https://www.datanovia.com/en/blog/how-to-add-p-values-onto-a-grouped-ggplot-using-the-ggpubr-r-package/
+
+```
+
+
+#### BAR CHART: MAIN EFFECTS ###
+```{r}
+#### BAR PLOT: MAIN EFFECTS ####
+
+## Statistical Tests
+
+stat.test <- GENFI_Time_1 %>%
+  ungroup() %>%
+  emmeans_test(MiniSEA ~ ClinicalGroup,
+               #covariate = c(Gender),
+               #ref.group = "NMC",
+               #comparisons = list(c("NMC", "PMC", "SMC"), c("NMC", "C9", "GRN", "MAPT")),
+               p.adjust.method = "bonferroni",
+               conf.level = 0.95,
+               #model = NULL,
+               #detailed = FALSE
+               )
+stat.test
+
+
+## Bar plots ##
+bp2 <- ggbarplot(
+  GENFI_Time_1, x = "ClinicalGroup", y = "MiniSEA", fill = "ClinicalGroup",
+  legend = "none", #none to remove; also: top, bottom, left, right
+  #main = "AIC GM Volume by Group",
+  xlab = "Clinical Group",
+  ylab = "MiniSEA",
+  palette = "npg", add = "mean_sd",
+  position = position_dodge(0.8)
+  )#+
+  #geom_point(alpha=0.3, size=1.2, position="jitter", color = "orange")
+bp2
+
+
+## Add p-values onto the bar plots
+stat.test <- stat.test %>%
+  add_xy_position(fun = "mean_sd", x = "ClinicalGroup", dodge = 0.8)
+bp2 + stat_pvalue_manual(
+  stat.test,  label = "p.adj.signif", tip.length = 0.02, step.increase = 0.05, MiniSEA = 0.01, hide.ns = TRUE
+  ) +
+  labs(fill = "Clinical Group") +
+  font("title", size = 14, color = "black", face = "bold")+
+  font("subtitle", size = 10, color = "black")+
+  font("caption", size = 10, color = "black")+
+  font("xlab", size = 14, color = "black")+
+  font("ylab", size = 14, color = "black")+
+  font("xy.text", size = 14, color = "black", face = "bold")
+
+```
+
+
+#### HOW TO CHANGE PLOT THEME TO TRANSPARENT
+```{r}
+# Ref: https://stackoverflow.com/questions/7455046/how-to-make-graphics-with-transparent-background-in-r-using-ggplot2
+
+# Ref: https://www.statology.org/ggplot-transparent-background/
+
+## Quick and dirty way (that works most times)
+p <- p +
+  theme(
+        rect = element_rect(fill = "transparent") # all rectangles
+      )
+p
+
+
+## More controlled way is to use options of theme: set transparency
+p <- p +
+  theme(
+    panel.background = element_rect(fill='transparent'), #transparent panel bg
+    plot.background = element_rect(fill='transparent', color=NA), #transparent plot bg
+    panel.grid.major = element_blank(), #remove major gridlines
+    panel.grid.minor = element_blank(), #remove minor gridlines
+    legend.background = element_rect(fill='transparent'), #transparent legend bg
+    legend.box.background = element_rect(fill='transparent') #transparent legend panel
+    )
+
+
+## If you decide to export the plot using ggsave(), be sure to specify that the background should be transparent:
+ggsave(p, filename = "tr_tst2.png",  bg = "transparent")
+
+
+```
+
+
+
+--- ANCOVA VIOLIN PLOTS
+
+#### VIOLIN PLOT: MiniSEA MAIN EFFECTS ####
+```{r}
+#### CUSTOMIZE VIOLIN PLOTS ###
+
+## Change color by groups
+dp <- ggplot(GENFI_Time_1, aes(x=ClinicalGroup, y=MiniSEA, fill=ClinicalGroup)) + 
+  geom_violin(trim=FALSE)+
+  geom_boxplot(width=0.1, fill=NA)+
+  #geom_dotplot(binaxis="y", stackdir="center", dotsize=0.1)+
+  #geom_jitter(shape=16, position=position_jitter(0.2), alpha=0.3)+
+  labs(x="Clinical Status", y = "Social Cognition (MiniSEA)")+
+  #labs(title="", x="Clinical Status", y = "Social Cognition (MiniSEA)")+
+  scale_x_discrete(breaks=c("NMC","PMC","SMC"),
+        labels=c("Non-mutation carriers", "Presymptomatic", "Symptomatic"))
+
+
+## Add p-values manually
+dp +
+  geom_bracket(
+    inherit.aes=FALSE,
+    xmin = c(1, 2), xmax = c(3, 3),
+    y.position = c(40, 35), label = c("****", "****"),
+    tip.length = 0.02,
+    color = c("black"),
+    size = 0.7
+    ) +
+  labs(x = "Clinical Status",
+       y = "Social Cognition Scores (MiniSEA)",
+       #title = "",
+       #subtitle = "",
+       #caption = "",
+       #tab = "",
+       #alt = "",
+       #alt_insight = "",
+       ) +
+  labs(fill = "Clinical Group") +
+  font("title", size = 14, color = "black", face = "plain")+
+  font("subtitle", size = 10, color = "black")+
+  font("caption", size = 10, color = "black")+
+  font("xlab", size = 14, color = "black")+
+  font("ylab", size = 14, color = "black")+
+  font("xy.text", size = 14, color = "black", face = "plain") +
+  theme_minimal() +
+  theme(axis.title.x = element_text(margin = margin(t = 1, r = 15, b = 0, l = 0)), 
+        axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 1, l = 1)),
+        axis.text.x = element_text(vjust=+5),
+        legend.position="top") +  # Increase space between title labels and plot and move legend to top
+  scale_fill_brewer(palette = "YlGnBu")
+
+
+
+# Change tick labels: http://www.sthda.com/english/wiki/ggplot2-axis-ticks-a-guide-to-customize-tick-marks-and-labels
+# Change tick label location: https://www.datanovia.com/en/blog/ggplot-axis-ticks-set-and-rotate-text-labels/
+# Brewer palettes: https://www.datanovia.com/en/blog/the-a-z-of-rcolorbrewer-palette/
+# Brwer palette card: https://r-graph-gallery.com/38-rcolorbrewers-palettes.html
+
+```
+
+
+#### VIOLIN PLOT: aINS INTERACTION ####
+```{r}
+#### CODE VARIABLES FOR INTERACTION PLOTTING ####
+
+# Source: https://www.marsja.se/how-to-concatenate-two-columns-or-more-in-r-stringr-tidyr/
+# Source: https://stackoverflow.com/questions/62000584/r-paste-two-strings-without-space
+
+
+## Concatenate Clinical and Genetic Groups into a new column
+GENFI_Time_1$ClinicalGenetic <- paste(GENFI_Time_1$ClinicalGroup, "_", GENFI_Time_1$GeneticMutation)
+
+GENFI_Time_1$ClinicalGenetic
+
+
+## Remove spaces in new column variables
+gsub(" ", "", paste(GENFI_Time_1$ClinicalGroup, "_", GENFI_Time_1$GeneticMutation))
+
+
+
+#### CUSTOMIZE VIOLIN PLOTS ####
+
+## Change color by groups
+dp <- ggplot(GENFI_Time_1, aes(x=ClinicalGenetic, y=aINS, fill=GeneticMutation)) + 
+  geom_violin(trim=FALSE)+  # Do not trim the tails of the violins
+  geom_boxplot(width=0.1, fill="NA")+  # Add median and quartle
+  #geom_boxplot(width=0.1, fill="white")+
+  #labs(title="Plot of MiniSEA  by Genetic Group", x="ClinicalGenetic", y = "aINS")
+  labs(x="Clinical Status", y = "Anterior Insula Volume")+
+  #labs(title="", x="Clinical Status", y = "Anterior Insula Volume")+
+  scale_x_discrete(labels=c("Non-mutation carriers", " ", "Presymptomatic", " ", " ", "Symptomatic", " "))  # Rename x-tick labels
+dp
+  
+
+## Add p-values manually
+dp +
+  geom_bracket(
+    inherit.aes=FALSE,
+    xmin = c(1, 2), xmax = c(7, 7),
+    y.position = c(9800, 9200), label = c("****", "****"), 
+    vjust=0.3,
+    tip.length = 0.02,
+    color = c("black"),
+    size = 0.6
+    ) +
+  geom_bracket(
+    inherit.aes=FALSE,
+    xmin = c(5), xmax = c(7),
+    y.position = c(7100), label = c("***"),
+    vjust=0.3,
+    tip.length = 0.02,
+    color = c("purple4"),
+    size = 0.6
+    ) +
+    geom_bracket(
+    inherit.aes=FALSE,
+    xmin = c(0.5, 2, 5), xmax = c(1.5, 4, 7),
+    y.position = c(-50, -50, -50), label = c(" ", " ", " "),
+    tip.length = -0.02,
+    color = c("turquoise4"),
+    size = 1,
+    )+
+  labs(x = "Clinical and Genetic Sub-Groups",
+       y = "Anterior Insula Volume",
+       #title = "",
+       #subtitle = "",
+       #caption = "",
+       #tab = "",
+       #alt = "",
+       #alt_insight = "",
+       ) +
+  labs(fill = "Genetic Group") +
+  font("title", size = 14, color = "black", face = "plain")+
+  font("subtitle", size = 10, color = "black")+
+  font("caption", size = 10, color = "black")+
+  font("xlab", size = 14, color = "black")+
+  font("ylab", size = 14, color = "black")+
+  font("xy.text", size = 12, color = "black", face = "plain") +
+  theme_minimal() +
+  theme(axis.title.x = element_text(margin = margin(t = -6, r = 15, b = 0, l = 0)), 
+        axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 1, l = 1)),
+        axis.text.x = element_text(vjust=+8),
+        legend.position="top") +  # Increase space between title labels and plot and move legend to top
+  scale_fill_brewer(palette = "PiYG")  # Change to gradient color scheme
+
+# Note: aesthetics are inherited by default. The geom_path is trying to look for the Group variable on the path dataset to get the color. You should use inherit.aes = FALSE on the geom_path
+
+# Source: https://stackoverflow.com/questions/44988682/scatterplot-error-in-funxi-object-group-not-found
+
+# Chart of all manual colours for ggplot2: http://sape.inf.usi.ch/quick-reference/ggplot2/colour
+
+```
+
+
+
+--- REFERENCES: SOURCES
+```{r Notes, eval=FALSE, message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+#### Resources ####
+# MANCOVA documentation: https://www.mohanwugupta.com/post/mancova/mancova/
+# MANCOVA documentation: https://yury-zablotski.netlify.app/post/mancova/
+# MANCOVA CRAN documentation for jmv: https://search.r-project.org/CRAN/refmans/jmv/html/mancova.html
+
+##########
+
+# rstatix anova_test: https://rpkgs.datanovia.com/rstatix/reference/anova_test.html
+
+# emmeans_test documentation: https://rpkgs.datanovia.com/rstatix/reference/emmeans_test.html
+
+# emmip: emeans_test for interactions (https://cran.r-project.org/web/packages/emmeans/vignettes/interactions.html)
+
+# emmip: emeans_test for interactions (https://www.datanovia.com/en/lessons/anova-in-r/)
+
+##########
+
+# adding p values and significance brackets to bar plots: https://www.datanovia.com/en/blog/how-to-add-p-values-onto-a-grouped-ggplot-using-the-ggpubr-r-package/
+
+# other colour palettes: http://www.sthda.com/english/wiki/ggplot2-colors-how-to-change-colors-automatically-and-manually
+
+# scientific and scifi palettes: https://cran.r-project.org/web/packages/ggsci/vignettes/ggsci.html
+
+# full ggplot themes: https://ggplot2.tidyverse.org/reference/ggtheme.html
+
+# changing legend position: https://www.datanovia.com/en/blog/ggplot-legend-title-position-and-labels/
+
+# remove legend title: http://www.cookbook-r.com/Graphs/Legends_(ggplot2)/
+
+# Renaming ggplot2 legend labels" http://www.cookbook-r.com/Graphs/Legends_(ggplot2)/
+
+# ggplot2 themes: https://ggplot2-book.org/polishing.html
+
+# Modifying figure legends: https://www.datanovia.com/en/blog/ggplot-legend-title-position-and-labels/
+
+# Modifying figure font size and style: https://rpkgs.datanovia.com/ggpubr/reference/font.html
+
+# How to make plot background a transparent theme: https://stackoverflow.com/questions/7455046/how-to-make-graphics-with-transparent-background-in-r-using-ggplot2
+
+##########
+
+# Plotting bar charts with interactions: https://cran.r-project.org/web/packages/ggsignif/vignettes/intro.html
+
+# Manually add brackets to bar charts: https://rdrr.io/cran/ggpubr/man/geom_bracket.html
+
+# geom_bracket: https://rdrr.io/cran/ggpubr/man/geom_bracket.html
+
+
+##########
+
+# Violin plots: http://www.sthda.com/english/wiki/ggplot2-violin-plot-quick-start-guide-r-software-and-data-visualization
+
+# Violin plots: https://ggplot2.tidyverse.org/reference/geom_violin.html
+
+```
+
+
+
+--- FUN: BONUS ROUND --- Things we don't use go here
+
+#### HOW TO MAKE A VIOLIN PLOT ####
+```{r}
+# Source: http://www.sthda.com/english/wiki/ggplot2-violin-plot-quick-start-guide-r-software-and-data-visualization
+
+# SourcE: https://ggplot2.tidyverse.org/reference/geom_violin.html
+
+
+### Prepare the data ###
+
+GENFI_Time_1
+
+
+
+### Basic violin plots ###
+
+# Vertical violin plot
+p <- ggplot(GENFI_Time_1, aes(x=ClinicalGroup, y=MiniSEA)) + 
+  geom_violin()
+p
+
+# # Horizonal violin plot (rotated)
+# p + coord_flip()
+
+# Set trim argument to FALSE (don't trim the tails of the plot)
+p <- ggplot(GENFI_Time_1, aes(x=ClinicalGroup, y=MiniSEA)) + 
+  geom_violin(trim=FALSE)
+p
+
+# Choose which items to display
+p + scale_x_discrete(limits=c("NMC", "PMC", "SMC"))
+
+
+
+### Add summary statistics on a violin plot ###
+
+## Add mean and median points
+
+# # Violin plot with mean points 
+# p + stat_summary(fun.y=mean, geom="point", shape=23, size=2)
+
+# Violin plot with median points
+p + stat_summary(fun=median, geom="point", size=2, color="red")
+
+
+## Add median and quartile
+p + geom_boxplot(width=0.1)
+
+
+## Add mean and standard deviation
+
+# Mean +/- SD added as a crossbar: mean_sdl computes mean plus or minus a constant times the standard deviation
+p + stat_summary(fun.data="mean_sdl", mult=1, 
+                 geom="crossbar", width=0.2 )
+
+# # Mean +/- SD added as a pointrange: the constant is specified using the argument mult (mult=1) - default is mult=2
+p + stat_summary(fun.data=mean_sdl, mult=1, 
+                 geom="pointrange", color="red")
+
+# Function to produce summary statistics (mean and +/- sd)
+data_summary <- function(x) {
+   m <- mean(x)
+   ymin <- m-sd(x)
+   ymax <- m+sd(x)
+   return(c(y=m,ymin=ymin,ymax=ymax))
+}
+
+# Use a customary summary function
+p + stat_summary(fun.data=data_summary)
+
+
+## Violin plots with dots
+
+# violin plot with dot plot
+p + geom_dotplot(binaxis='y', stackdir='center', dotsize=1)
+
+# violin plot with jittered points
+p + geom_jitter(shape=16, position=position_jitter(0.2))  # 0.2 : degree of jitter in x direction
+
+
+
+### Change violin plot colors by groups ###
+
+## Change violin plot line colors
+
+# Change violin plot line colors by groups
+p<-ggplot(GENFI_Time_1, aes(x=ClinicalGroup, y=MiniSEA, color=GeneticMutation)) +
+  geom_violin(trim=FALSE)
+p
+
+
+## It is also possible to change manually violin plot line colors using the functions :
+    # scale_color_manual() : to use custom colors
+    # scale_color_brewer() : to use color palettes from RColorBrewer package
+    # scale_color_grey() : to use grey color palettes
+
+# Use custom color palettes
+p+scale_color_manual(values=c("#999999", "#E69F00", "#56B4E9", "Red"))
+
+# Use brewer color palettes
+p+scale_color_brewer(palette="Dark2")
+
+# Use grey scale
+p + scale_color_grey() + theme_light()
+
+
+
+### Change violin plot fill colors ###
+
+# Use single color
+ggplot(GENFI_Time_1, aes(x=ClinicalGroup, y=MiniSEA)) +
+  geom_violin(trim=FALSE, fill='#A4A4A4', color="darkred")+
+  geom_boxplot(width=0.1) + theme_minimal()
+
+# Change violin plot colors by groups
+p<-ggplot(GENFI_Time_1, aes(x=ClinicalGroup, y=MiniSEA, fill=GeneticMutation)) +
+  geom_violin(trim=FALSE)
+p
+
+
+## It is also possible to change manually violin plot colors using the functions :
+    # scale_fill_manual() : to use custom colors
+    # scale_fill_brewer() : to use color palettes from RColorBrewer package
+    # scale_fill_grey() : to use grey color palettes
+
+# Use custom color palettes
+p+scale_fill_manual(values=c("#999999", "#E69F00", "#56B4E9", "Red"))
+
+# Use brewer color palettes
+p+scale_fill_brewer(palette="Dark2")
+
+# Use grey scale
+p + scale_fill_grey() + theme_classic()
+
+
+
+### Change the legend position ###
+
+# Legend on top
+p + theme(legend.position="top")
+
+# Legend on bottom
+p + theme(legend.position="bottom")
+
+# No legend
+p + theme(legend.position="none") # Remove legend
+
+
+
+### Change the order of items in the legend
+
+# The function scale_x_discrete can be used to change the order of items to “2”, “0.5”, “1” :
+p + scale_x_discrete(limits=c("2", "0.5", "1"))
+
+
+
+### Violin plot with multiple groups
+
+# Change violin plot colors by groups
+ggplot(GENFI_Time_1, aes(x=ClinicalGroup, y=MiniSEA, fill=GeneticMutation)) +
+  geom_violin()
+
+# Change the position
+p<-ggplot(GENFI_Time_1, aes(x=ClinicalGroup, y=MiniSEA, fill=GeneticMutation)) +
+  geom_violin(position=position_dodge(1))
+p
+
+
+## Change violin plot colors and add dots :
+
+# Add dots
+p + geom_dotplot(binaxis='y', stackdir='center',
+                 position=position_dodge(1))
+# Change colors
+p + scale_fill_manual(values=c("#999999", "#E69F00", "#56B4E9", "Red"))
+
+
+
+### Customized violin plots ###
+
+# Basic violin plot
+ggplot(GENFI_Time_1, aes(x=ClinicalGroup, y=MiniSEA)) + 
+  geom_violin(trim=FALSE, fill="gray")+
+  labs(title="Plot of length  by GeneticMutation",x="GeneticMutation (C9, GRN, MAPT)", y = "MiniSEA")+
+  geom_boxplot(width=0.1)+
+  theme_classic()
+
+# Change color by groups
+dp <- ggplot(GENFI_Time_1, aes(x=ClinicalGroup, y=MiniSEA, fill=GeneticMutation)) + 
+  geom_violin(trim=FALSE)+
+  geom_boxplot(width=0.1, fill="white")+
+  labs(title="Plot of length  by GeneticMutation",x="GeneticMutation (C9, GRN, MAPT)", y = "MiniSEA")
+dp + theme_classic()
+
+
+## Change fill colors manually :
+
+# Continuous colors
+dp + scale_fill_brewer(palette="Blues") + theme_classic()
+
+# Discrete colors
+dp + scale_fill_brewer(palette="Dark2") + theme_minimal()
+
+# Gradient colors
+dp + scale_fill_brewer(palette="RdBu") + theme_minimal()
+
+```
+
+
+
