@@ -1,0 +1,183 @@
+---
+title: "ANCOVA"
+author: "Shanny Foo"
+date: "25/06/2022"
+output: word_document
+---
+
+#### HOUSECLEANING IN R ####
+# To comment/uncomment out whole chunk: SHIFT+CTRL+C
+# To Restart R: SHIFT+CTRL+F10
+```{r Clearing R Workspace, message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+# Clear plots
+if(!is.null(dev.list())) dev.off()  # In GUI: clear all plots in the plots panel.
+
+# Clear console
+cat("\014")  # In GUI: Ctrl+L or to click on the clear console within the Edit menu.
+
+# Clean workspace
+rm(list=ls())  # In GUI: clear objects from the workspace in the environment panel.
+```
+
+
+
+--- SETUP
+#### LIBRARIES ####
+```{r warning=TRUE, include=FALSE}
+#library(openxlsx)
+library(readxl)
+
+library(tidyverse)
+library(ggpubr)
+library(ggplot2)
+library(pBrackets)
+library(grid)
+library(rstatix)
+library(ggprism)
+library(patchwork)
+library(magrittr)
+library(emmeans)
+library(zoo)
+```
+
+
+#### SOURCE DATAFRAME: VARIABLE RE-NAMING AND ASSIGNMENT ####
+```{r All Data, message=FALSE, warning=TRUE, include=FALSE, paged.print=FALSE}
+## Loading a dataframe from excel: indicate filepath, name of excel file, and worksheet
+Dataframe <- read_excel("E:\\Filepath\\subdirs\\NameOfExcelFile.xlsx", sheet = "NameOfSheet")
+
+
+## Mutate variables of interest (if needed)
+Dataframe <- Dataframe %>%
+  mutate(New_Var = (Old_Var1+Old_Var2/2))  # Example of New Variable created based on averaging two other variables
+
+
+# Take median TIV within subject (they will have had prior measurements, hopefully, and this does not tend to change within the same individual
+
+# Impute TIV using within-subject values
+
+
+## Rename variables (if needed)
+Dataframe <- Dataframe %>%
+  rename("NewVarName" = OldVarName,  # NewVarName replaces label for OldVarName 
+         "NewVarName2" = OldVarName2) %>%
+    mutate_if(is.numeric,
+            round,
+            digits = 2)  # Round to 2 digits
+```
+
+
+
+--- DATA CLEANING AND PREPROCESSING
+
+#### SELECT VARIABLES OF INTEREST ####
+```{r Labelling variables, echo=FALSE, message=FALSE, warning=TRUE, paged.print=FALSE}
+## Create a new dataframe from the omnibus main source:
+    # group data by grouping variables (e.g., by subject in longtiduinal, by clinical group for summary counts)
+    # select the variables you will be using (keeping it clean)
+    # filter out by conditions (to only include the data you want to analyse)
+
+# Example: 
+SubDF <- Dataframe %>%
+  group_by(Subject) %>%  # group by subject since they have one row per timepoint
+  select(Cohort, Days, Timepoint, Visit, Subject, Age, Gender, Education, ClinicalGroup, ClinicalStatus, GeneticMutation, GeneticGroup, MiniSEA, aINS, Site, ScannerMRI, Total_Brain, TIV_mm3) %>%  # select variables to be included in analysis
+  filter(ClinicalGroup %in% c("NMC", "PMC", "SMC")) %>%  # only these clincal groups to be in analysis
+  filter(GeneticMutation %in% c("NMC", "C9", "GRN", "MAPT")) %>%  # only these genetic groups to be in analysis
+  filter(Timepoint %in% c("1","2","3")  # only include data from Timepoints 1, 2, 3
+
+```
+
+
+####
+```{r}
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

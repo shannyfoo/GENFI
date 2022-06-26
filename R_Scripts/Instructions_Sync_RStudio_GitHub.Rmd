@@ -1,0 +1,68 @@
+---
+title: "Sync GitHub repository with existing R project"
+output: word_document
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r}
+# Source: https://hansenjohnson.org/post/sync-github-repository-with-existing-r-project/
+
+
+#### STEP 1: CREATE A GITHUB REPOSITORY ####
+
+# Go to your github account and click the button to create a new repo. I typically do not initialize with the .gitignore, readme.md, or license.md files, but add them myself manually after the project is up and running.
+
+# Setting up Git with RStudio:
+    # https://jennybc.github.io/2014-05-12-ubc/ubc-r/session03_git.html
+    # https://cfss.uchicago.edu/setup/git-with-rstudio/
+
+
+
+#### STEP 2: ENABLE GIT IN RSTUDIO ####
+
+  # 1) Open your project in Rstudio and navigate to Tools -> Version Control -> Project Setup
+
+  # 2) Click SVN/Git tab and select git as the version control system. It will ask you to initialize a new git repo and restart Rstudio
+
+  # 3) After Rstudio reopens, confirm that there is a Git tab in the environment pane (which for me, and I think by default, is in the upper right of the IDE)
+
+
+
+#### STEP 3: SYNCHRONIZE WITH THE GITHUB REPO ####
+
+## Open a terminal and do the following:
+
+# move to the project directory
+cd Projects/website
+
+# initiate the upstream tracking of the project on the GitHub repo
+git remote add origin https://github.com/hansenjohnson/website.git
+
+# pull all files from the GitHub repo (typically just readme, license, gitignore)
+git pull origin master
+
+# set up GitHub repo to track changes on local machine
+git push -u origin master
+
+
+
+#### STEP 4: PUSH FILES TO GITHUB ####
+
+# Click the Git tab in Rstudio, and then click Commit. This will open a window where you can stage files to be tracked (and synced on GitHub). Select all the files you would like to track, write a commit message, then click push. This will send all changes to the GitHub repo.
+
+
+
+#### STEP 5: UP AND RUNNING ####
+
+# All you need to do now is remember to commit changes and push them to the GitHub repo. Don’t forget!
+
+
+
+#### BONUS: REMOVING A TRACKED DIRECTORY #### 
+
+# I inevitably track a folder that I’d prefer to keep off of GitHub. That directory, hypothetically called /public for this example, can be easily removed using:
+git rm -r --cached public
+# Then commit the changes, push, and you’re all done!
+```
+
