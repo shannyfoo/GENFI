@@ -1,0 +1,396 @@
+---
+title: "Calculate amount of missing scans by subject"
+output: word_document
+editor_options: 
+  chunk_output_type: console
+---
+
+# Load data
+# mutate variable to count number of 1's and then subtract the 1's from each download missing and GENFI missing rows. 
+# treat the beh missing manually since there are only 2
+
+#### LIBRARIES ####
+```{r}
+library(openxlsx)
+library(readxl)
+library(writexl)
+
+library(tidyverse)
+
+```
+
+
+#### SOURCE DATAFRAME ####
+```{r All Data, message=FALSE, warning=TRUE, include=FALSE, paged.print=FALSE}
+## GENFI Data: Longitudinal by Rows: https://readxl.tidyverse.org/reference/read_excel.html
+GENFI <- read_excel("E:\\Desktop\\FTD_Project\\GENFI\\GENFI_Data\\GENFI_Data_Analysis\\Dataframes\\GENFI_1_2_Longitudinal_04_07jun2022.xlsx", sheet = "Longitudinal_Rows")
+```
+
+
+#### COUNT MISSING SCANS ####
+```{r}
+## Code variables to count missing scans: Code missing as 1, otherwise 0
+GENFI$Scans_Missing_Coded <- ifelse(GENFI$Scans_Missing == "MISSING", 1, 0)
+#GENFI$Scans_Missing_Coded <- as.numeric(GENFI$Scans_Missing_Coded)
+GENFI$BIDS_anat_Missing <- ifelse(GENFI$BIDS_anat == "MISSING", 1, 0)
+GENFI$BIDS_func_Missing <- ifelse(GENFI$BIDS_func == "MISSING", 1, 0)
+
+
+## Create dataframe of just missing scans
+GENFI_Missing <- GENFI %>%
+  select(Group_MC, Genetic_Group_NMC, Cohort, Blinded_Site, Scanner, Date_of_assessment, Session, Visit, Blinded_Code, BIDS_anat, BIDS_func, Download_Missing, GENFI_Missing, Scans_Missing, Beh_Missing, BIDS_anat_Missing, BIDS_func_Missing, Scans_Missing_Coded, Row_Count) %>%
+  filter(Scans_Missing == "MISSING" | Beh_Missing == "MISSING" | BIDS_anat == "MISSING" | BIDS_func == "MISSING") %>%
+  group_by(Blinded_Code) %>%
+  mutate(Scans_Expected = sum(Row_Count),
+         Files_Missing = sum(Scans_Missing_Coded),
+         Scans_Count = Scans_Expected-Files_Missing,
+         anat_expected = sum(Row_Count),
+         func_expected = sum(Row_Count),
+         anat_missing = sum(BIDS_anat_Missing),
+         func_missing = sum(BIDS_func_Missing),
+         anat_count = anat_expected-anat_missing,
+         func_count = func_expected-func_missing)
+
+
+## Code variables to count how many subjects should have at least 2 timepoints
+GENFI_Missing$anat_long <- ifelse(GENFI_Missing$anat_expected>1, 1, 0)
+GENFI_Missing$func_long <- ifelse(GENFI_Missing$func_expected>1, 1, 0)
+
+## Create dataframe to find out who are these subs with affected longitudinal
+GENFI_Long_Missing <- GENFI_Missing %>%
+  select(Group_MC, Genetic_Group_NMC, Blinded_Code, anat_expected, func_expected, anat_missing, func_missing, anat_long, func_long) %>%
+  filter(func_expected>1 | anat_expected>1) 
+  #filter(func_expected-func_missing < 2 | anat_expected-anat_missing < 2)
+
+```
+
+
+#### WRITE TO EXCEL ####
+```{r}
+# Source: https://datatofish.com/export-dataframe-to-excel-in-r/
+
+# library("writexl")
+# 
+# df <- data.frame(Name = c("Jon", "Bill", "Maria", "Ben", "Tina"),
+#                  Age = c(23, 41, 32, 58, 26)
+#                  )
+
+write_xlsx(GENFI_Missing, "E:\\Desktop\\FTD_Project\\GENFI\\GENFI_Data\\GENFI_Missing_Count.xlsx")
+```
+
+
+#### SUMMARY: MISSING FOLDERS ####
+```{r}
+## Subject scan file folders
+
+# Total rows: 69
+GENFI_Missing %>%
+  ungroup() %>%
+  filter(Group_MC == "SMC") %>%
+  filter(Scans_Count<Scans_Expected) %>%
+  summarise(count=n()) 
+
+# Total subjects: 59
+GENFI_Missing %>%
+  group_by(Blinded_Code) %>%
+  filter(Group_MC == "SMC") %>%
+  filter(Scans_Count<Scans_Expected) %>%
+  summarise(count=n())
+
+###
+
+# Total rows: 81
+GENFI_Missing %>%
+  ungroup() %>%
+  filter(Group_MC == "PMC") %>%
+  filter(Scans_Count<Scans_Expected) %>%
+  summarise(count=n())
+
+# Total subjects: 60
+GENFI_Missing %>%
+  group_by(Blinded_Code) %>%
+  filter(Group_MC == "PMC") %>%
+  filter(Scans_Count<Scans_Expected) %>%
+  summarise(count=n())
+
+###
+
+# Total rows: 105
+GENFI_Missing %>%
+  ungroup() %>%
+  filter(Group_MC == "NMC") %>%
+  filter(Scans_Count<Scans_Expected) %>%
+  summarise(count=n())
+
+# Total subjects: 62
+GENFI_Missing %>%
+  group_by(Blinded_Code) %>%
+  filter(Group_MC == "NMC") %>%
+  filter(Scans_Count<Scans_Expected) %>%
+  summarise(count=n())
+
+```
+
+
+#### SUMMARY: MISSING ANAT AND FUNC ####
+```{r}
+## anat
+
+# Total rows: 71
+GENFI_Missing %>%
+  ungroup() %>%
+  filter(Group_MC == "SMC") %>%
+  filter(anat_count<anat_expected) %>%
+  summarise(count=n())
+
+# Total subjects: 61
+GENFI_Missing %>%
+  group_by(Blinded_Code) %>%
+  filter(Group_MC == "SMC") %>%
+  filter(anat_count<anat_expected) %>%
+  summarise(count=n())
+
+###
+
+# Total rows: 83
+GENFI_Missing %>%
+  ungroup() %>%
+  filter(Group_MC == "PMC") %>%
+  filter(anat_count<anat_expected) %>%
+  summarise(count=n())
+
+# Total subjects: 61
+GENFI_Missing %>%
+  group_by(Blinded_Code) %>%
+  filter(Group_MC == "PMC") %>%
+  filter(anat_count<anat_expected) %>%
+  summarise(count=n())
+
+###
+
+# Total rows: 111
+GENFI_Missing %>%
+  ungroup() %>%
+  filter(Group_MC == "NMC") %>%
+  filter(anat_count<anat_expected) %>%
+  summarise(count=n())
+
+# Total subjects: 68
+GENFI_Missing %>%
+  group_by(Blinded_Code) %>%
+  filter(Group_MC == "NMC") %>%
+  filter(anat_count<anat_expected) %>%
+  summarise(count=n())
+
+####################
+
+## func
+
+# Total rows: 125
+GENFI_Missing %>%
+  ungroup() %>%
+  filter(Group_MC == "SMC") %>%
+  filter(func_count<func_expected) %>%
+  summarise(count=n())
+
+# Total subjects: 110
+GENFI_Missing %>%
+  group_by(Blinded_Code) %>%
+  filter(Group_MC == "SMC") %>%
+  filter(func_count<func_expected) %>%
+  summarise(count=n())
+
+###
+
+# Total rows: 242
+GENFI_Missing %>%
+  ungroup() %>%
+  filter(Group_MC == "PMC") %>%
+  filter(func_count<func_expected) %>%
+  summarise(count=n())
+
+# Total subjects: 170
+GENFI_Missing %>%
+  group_by(Blinded_Code) %>%
+  filter(Group_MC == "PMC") %>%
+  filter(func_count<func_expected) %>%
+  summarise(count=n())
+
+###
+
+# Total rows: 229
+GENFI_Missing %>%
+  ungroup() %>%
+  filter(Group_MC == "NMC") %>%
+  filter(func_count<func_expected) %>%
+  summarise(count=n())
+
+# Total subjects: 150
+GENFI_Missing %>%
+  group_by(Blinded_Code) %>%
+  filter(Group_MC == "NMC") %>%
+  filter(func_count<func_expected) %>%
+  summarise(count=n())
+
+```
+
+
+#### SUMMARY: SUBS MISSING LONG THIS CODE NEEDS FIXING ####
+```{r}
+## anat_long_missing
+
+# Total rows: 
+GENFI_Missing %>%
+  ungroup() %>%
+  filter(Group_MC == "SMC") %>%
+  filter(anat_long_missing == 1) %>%
+  summarise(count=n())
+
+# Total subjects: 
+GENFI_Missing %>%
+  group_by(Blinded_Code) %>%
+  filter(Group_MC == "SMC") %>%
+  filter(anat_long_missing ==1) %>%
+  summarise(count=n())
+
+###
+
+# Total rows: 
+GENFI_Missing %>%
+  ungroup() %>%
+  filter(Group_MC == "PMC") %>%
+  filter(anat_long_missing == 1) %>%
+  summarise(count=n())
+
+# Total subjects: 
+GENFI_Missing %>%
+  group_by(Blinded_Code) %>%
+  filter(Group_MC == "PMC") %>%
+  filter(anat_long_missing ==1) %>%
+  summarise(count=n())
+
+###
+
+# Total rows: 
+GENFI_Missing %>%
+  ungroup() %>%
+  filter(Group_MC == "NMC") %>%
+  filter(anat_long_missing == 1) %>%
+  summarise(count=n())
+
+# Total subjects: 
+GENFI_Missing %>%
+  group_by(Blinded_Code) %>%
+  filter(Group_MC == "NMC") %>%
+  filter(anat_long_missing ==1) %>%
+  summarise(count=n())
+
+##############################
+
+## func_long_missing
+
+# Total rows: 
+GENFI_Missing %>%
+  ungroup() %>%
+  filter(Group_MC == "SMC") %>%
+  filter(func_long_missing == 1) %>%
+  summarise(count=n())
+
+# Total subjects: 
+GENFI_Missing %>%
+  group_by(Blinded_Code) %>%
+  filter(Group_MC == "SMC") %>%
+  filter(func_long_missing ==1) %>%
+  summarise(count=n())
+
+###
+
+# Total rows: 
+GENFI_Missing %>%
+  ungroup() %>%
+  filter(Group_MC == "PMC") %>%
+  filter(func_long_missing == 1) %>%
+  summarise(count=n())
+
+# Total subjects: 
+GENFI_Missing %>%
+  group_by(Blinded_Code) %>%
+  filter(Group_MC == "PMC") %>%
+  filter(func_long_missing ==1) %>%
+  summarise(count=n())
+
+###
+
+# Total rows: 
+GENFI_Missing %>%
+  ungroup() %>%
+  filter(Group_MC == "NMC") %>%
+  filter(func_long_missing == 1) %>%
+  summarise(count=n())
+
+# Total subjects: 
+GENFI_Missing %>%
+  group_by(Blinded_Code) %>%
+  filter(Group_MC == "NMC") %>%
+  filter(func_long_missing ==1) %>%
+  summarise(count=n())
+
+```
+
+
+#### SUMMARY: CHECK FOR UNIQUE SUBS ####
+```{r}
+# # List of unique subs to check if missing data affects longitduinal, sorted alphabetically
+# GENFI_Missing_Unique <- sort(unique(GENFI_Missing$Blinded_Code))
+# 
+# # Convert list to dataframe
+# GENFI_Missing_Unique <- as.data.frame(GENFI_Missing_Unique)
+
+
+# Total rows: 36
+GENFI_Long_Missing %>%
+  ungroup() %>%
+  filter(Group_MC == "SMC") %>%
+  summarise(count=n())
+
+# Total subjects: 21
+GENFI_Long_Missing %>%
+  group_by(Blinded_Code) %>%
+  filter(Group_MC == "SMC") %>%
+  summarise(count=n())
+
+### 
+
+# Total rows: 135
+GENFI_Long_Missing %>%
+  ungroup() %>%
+  filter(Group_MC == "PMC") %>%
+  summarise(count=n())
+
+# Total subjects: 22
+GENFI_Long_Missing %>%
+  group_by(Blinded_Code) %>%
+  filter(Group_MC == "PMC") %>%
+  summarise(count=n())
+
+###
+
+# Total rows: 130
+GENFI_Long_Missing %>%
+  ungroup() %>%
+  filter(Group_MC == "NMC") %>%
+  summarise(count=n())
+
+# Total subjects: 51
+GENFI_Long_Missing %>%
+  group_by(Blinded_Code) %>%
+  filter(Group_MC == "NMC") %>%
+  summarise(count=n())
+
+```
+
+
+
+
+
+

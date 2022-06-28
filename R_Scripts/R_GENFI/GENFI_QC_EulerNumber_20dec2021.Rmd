@@ -1,0 +1,158 @@
+---
+title: "GENFI: Freesurfer QC by Raw Euler Numbers"
+author: "Shanny Foo"
+date: "20/12/2021"
+output: word_document
+---
+
+--- SETUP ---
+#### Libraries ####
+```{r}
+# Open Excel dataframe for data wrangling
+library(openxlsx) 
+library(readxl) 
+
+# Data cleaning and management 
+library(tidyverse)  
+library(ggpubr) 
+```
+
+#### Source Dataframe ####
+```{r}
+### GENFI Freesurfer Euler Numbers ###
+
+FS_QC_EN <- read_excel("E:\\Desktop\\FTD_Project\\GENFI\\GENFI_Data\\GENFI_Data_Analysis\\QC\\GENFI_Freesurfer_T1s_EulerNumbers_01_20dec2021.xlsx", sheet = "raw_euler_numbers")
+```
+
+#### Clean-up in R ####
+```{r}
+#### R Program to remove: Objects from Memory ####
+  
+### Creating a vector ###
+#vec <- c(1, 2, 3, 4)
+  
+### Creating a list ###
+#list1 = list("Number" = c(1, 2, 3),
+             #"Characters" = c("a", "b", "c"))
+  
+### Creating a matrix ###
+#mat <- matrix(c(1:9), 3, 3)
+  
+### Calling rm() Function: Remove all objects ###
+#rm(list = ls())
+  
+### Calling ls() to check object list ###
+#ls()
+
+
+#### Clearing R Workspace ####
+
+### Clear plots
+if(!is.null(dev.list())) dev.off()  # This is equivalent to click on the button clear all plots in the plots panel.
+
+### Clear console
+cat("\014")  # This is identical to Ctrl+L or to click on the clear console within the Edit menu.
+
+### Clean workspace
+rm(list=ls())  # This is equivalent to click on the button clear objects from the workspace in the environment panel.
+
+### Set working directory
+#setwd("~/Downloads/MyScripts")  # Here you set up your working directory, in my case (Linux Ubuntu user), I choose to use the directory Myscripts inside my Downloads directory. You could use your own path to the directory you want to use there.
+# You can use the getwd() function in the Console which returns the file path of the current working directory
+
+```
+
+
+--- DATA WRANGLING ---
+#### Modify DF ####
+```{r}
+# Create Variable for average euler number for L+R
+FS_QC_EN <- FS_QC_EN %>%
+  mutate(average_euler = (left_euler+right_euler)/2)  # Average of L+R
+
+# Remove missing values
+FS_QC_EN <- FS_QC_EN %>% drop_na(average_euler)
+```
+
+#### Outlier Detection ####
+```{r}
+# Histogram of data distribution
+ggplot(FS_QC_EN, aes(x=average_euler)) + geom_histogram()
+
+
+# Using IQR to calculate cut-off ranges (see: Moereao-Sanchez et al., 2021): "outliers were defined as 1.5 interquartile range (IQR) below the first quartile (Q1), and 1.5 IQR above the third quartile (Q3), following the classical method pro- posed by Tukey (1977) . Hence, the lower inner fence was defined as Q1-1.5 ∗ IQR, while the upper inner fence was Q3 + 1.5 ∗ IQR"
+summary(FS_QC_EN$average_euler)
+
+
+### Manual calculation check for cutoff:  ### 
+# Calculate Q1, Q2, and IQR for the data
+Q1 = quantile(FS_QC_EN$average_euler, 0.25) # First quartile
+Q3 = quantile(FS_QC_EN$average_euler, 0.75) # Third quartile
+IQR_euler = IQR(FS_QC_EN$average_euler, na.rm=TRUE)  # IQR for average_euler
+
+# Multiply IQR by 1.5 (a constant used to discern outliers): IQR_euler*1.5
+
+# Add 1.5*IQR to Q3. Any number greater than this is a suspected outlier
+IQR_euler_outlier_max = Q3+(IQR_euler*1.5)  # Max range cut-off
+
+# Subtract 1.5*IQR from Q1. Any number less than this is a supected outlier
+IQR_euler_outlier_min = Q1-(IQR_euler*1.5)  # Min range cut-off
+
+
+### DF of outliers ###
+# Source: https://www.datanovia.com/en/lessons/compute-and-add-new-variables-to-a-data-frame-in-r/
+GENFI_Outliers <- FS_QC_EN %>%
+  select(subject_id, session_id, average_euler) %>%
+  filter(average_euler >= IQR_euler_outlier_max | average_euler <= IQR_euler_outlier_min)
+
+
+# Note: focus on min cut-off based on data distribution (skewed left, all roughly below 0) ... -84
+
+```
+
+# Find min outliers: 74 observations
+```{r}
+# Make dataframe for min cutoff outliers
+FS_QC_EN_Min <- FS_QC_EN %>%
+  filter(average_euler < IQR_euler_outlier_min)
+
+# Write dataframe to Excel for QC in: E:\Programs\R\R_Markdown_Notebooks
+write.xlsx(FS_QC_EN_Min, file = "FS_QC_EN_Min.xlsx", sheetName = "Euler_Numbers", append = FALSE)
+
+```
+
+# Step 1: Make Excel list of 74 outliers for QC check: Follow PAD spreadsheet format for Alfie
+
+# Step 2: Read Visual QC documentation - download the software if possible for Windows. Read manual for idea on how to grade the scan quality: Minor Error, Major Error, Fail (with notes for why and where the error is). Also, do I need/want to download VisualQC onto a workstation?
+
+# Step 3: Open each in Freeview for Visual Inspection - compare to Bert
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
